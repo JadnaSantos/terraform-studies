@@ -78,7 +78,8 @@ jobs:
         run: terraform init
 
       - name: Terraform format 💁
-        run: terraform fmt -check
+        working-directory: infra
+        run: terraform fmt -recursive -diff -check
 
       - name: Terraform Validate 🚦
         run: terraform validate
