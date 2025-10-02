@@ -4,10 +4,15 @@ on:
   push:
     branches: [main, develop]
 
+permissions:
+  id-token: write
+  contents: read
+
 env:
-  TF_LOG: INFO
+  AWS_REGION: us-east-1
   GOARCH: arm64
   ZIP_FILE: function.zip
+  TF_LOG: INFO
 
 jobs:
   test:
@@ -15,18 +20,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Load .env (optional)
+      - name: Load .env (non-sensitive)
         run: |
           if [ -f .env ]; then
-            sed -e '/^\s*#/d' -e '/^\s*$/d' .env >> "$GITHUB_ENV"
+            grep -E '^(AWS_REGION|GOARCH|ZIP_FILE)=' .env >> "$GITHUB_ENV" || true
           fi
 
-      - name: Set up Go 🤲
-        uses: actions/setup-go@v5
+      - uses: actions/setup-go@v5
         with:
           go-version: "1.22"
 
-      - name: Test 🤘
+      - name: Go tests
         run: go test -v ./...
 
   build:
@@ -34,32 +38,34 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Go 🤲
-        uses: actions/setup-go@v5
+      - name: Load .env (non-sensitive)
+        run: |
+          if [ -f .env ]; then
+            grep -E '^(AWS_REGION|GOARCH|ZIP_FILE)=' .env >> "$GITHUB_ENV" || true
+          fi
+
+      - uses: actions/setup-go@v5
         with:
           go-version: "1.22"
 
-      - name: Build 🏋️
+      - name: Build ZIP (Go → bootstrap)
         run: |
           cd app
-          GOOS=linux GOARCH=${{ env.GOARCH }} CGO_ENABLED=0 \
+          GOOS=linux GOARCH=${GOARCH} CGO_ENABLED=0 \
             go build -ldflags="-s -w" -o bootstrap .
-          zip -9 ../${{ env.ZIP_FILE }} bootstrap
+          zip -9 ../${ZIP_FILE} bootstrap
           cd ..
-          ls -lh ${{ env.ZIP_FILE }}
+          ls -lh "${ZIP_FILE}"
 
-      - name: Upload Artifact 👆
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: lambda
           path: ${{ env.ZIP_FILE }}
           retention-days: 5
-          if-no-files-found: warn
 
   deploy:
-    needs:
-      - build
-      - test
+    needs: [build, test]
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -68,44 +74,52 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download lambda.zip 👇
+      - name: Download lambda.zip
         uses: actions/download-artifact@v4
         with:
           name: lambda
           path: ./infra
 
-      - name: Setup Terraform 🤲
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: "1.8.5"
+      - name: Load .env (non-sensitive)
+        run: |
+          if [ -f "$GITHUB_WORKSPACE/.env" ]; then
+            grep -E '^(AWS_REGION|GOARCH|ZIP_FILE)=' "$GITHUB_WORKSPACE/.env" >> "$GITHUB_ENV" || true
+          fi
 
-      - name: Terraform init 🌛
+      # Configura credenciais AWS via OIDC (recomendado)
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }} # salve a ARN da role como secret
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.8.5
+
+      - name: Terraform init
         run: terraform init
 
-      - name: Terraform format 💁
-        working-directory: infra
+      - name: Terraform fmt
         run: terraform fmt -recursive -diff -check
 
-      - name: Terraform Validate 🚦
+      - name: Terraform validate
         run: terraform validate
 
-      - name: Terraform Plan 🍆
+      - name: Terraform plan
         id: plan
         run: terraform plan -input=false
-        continue-on-error: true
 
-      - name: Terraform Plan Status 🚅
+      - name: Fail if plan failed
         if: steps.plan.outcome == 'failure'
         run: exit 1
 
-      - name: Terraform Apply 🍎
+      - name: Terraform apply (main only)
         if: github.ref == 'refs/heads/main'
-        working-directory: infra
         run: terraform apply -auto-approve -input=false
 
   destroy:
-    needs:
-      - deploy
+    needs: [deploy]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
     defaults:
@@ -121,17 +135,21 @@ jobs:
           name: lambda
           path: ./infra
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          terraform_version: "1.8.5"
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.8.5
 
       - name: Terraform init
         run: terraform init
 
-      - name: Terraform Plan
-        run: terraform plan -input=false
-        continue-on-error: true
+      - name: Terraform plan (pre-destroy)
+        run: terraform plan -destroy -input=false
 
-      - name: Terraform Destroy
+      - name: Terraform destroy
         run: terraform destroy -input=false -auto-approve
