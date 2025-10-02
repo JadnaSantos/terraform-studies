@@ -1,0 +1,16 @@
+# ENV
+.env
+
+# Terraform
+.terraform/
+terraform.tfstate
+terraform.tfstate.backup
+.terraform.lock.hcl
+
+# Lambda build artifacts
+bootstrap
+function.zip
+
+# IDE
+.vscode/
+.idea/
