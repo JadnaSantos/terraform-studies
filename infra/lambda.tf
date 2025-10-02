@@ -3,8 +3,8 @@ resource "aws_lambda_function" "time_api" {
   role          = aws_iam_role.lambda_role.arn
 
   package_type     = "Zip"
-  filename         = "${path.module}/../function.zip"
-  source_code_hash = filebase64sha256("${path.module}/../function.zip")
+  filename         = "${path.module}/function.zip"
+  source_code_hash = filebase64sha256("${path.module}/function.zip")
 
   runtime       = "provided.al2"
   handler       = "bootstrap"
