@@ -3,7 +3,7 @@ resource "aws_lambda_function" "time_api" {
   role          = aws_iam_role.lambda_role.arn
 
   package_type     = "Zip"
-  filename         = "${path.module}/../function.zip"      
+  filename         = "${path.module}/../function.zip"
   source_code_hash = filebase64sha256("${path.module}/../function.zip")
 
   runtime       = "provided.al2"
@@ -34,7 +34,7 @@ resource "aws_cloudwatch_log_group" "lambda_logs" {
 
 resource "aws_lambda_function_url" "time_api_url" {
   function_name      = aws_lambda_function.time_api.function_name
-  authorization_type = "NONE"   
+  authorization_type = "NONE"
   cors {
     allow_origins = ["*"]
     allow_methods = ["GET"]
@@ -42,10 +42,10 @@ resource "aws_lambda_function_url" "time_api_url" {
 }
 
 resource "aws_lambda_permission" "function_url_public" {
-  statement_id        = "AllowPublicInvokeViaFunctionUrl"
-  action              = "lambda:InvokeFunctionUrl"
-  function_name       = aws_lambda_function.time_api.function_name
-  principal           = "*"                
+  statement_id           = "AllowPublicInvokeViaFunctionUrl"
+  action                 = "lambda:InvokeFunctionUrl"
+  function_name          = aws_lambda_function.time_api.function_name
+  principal              = "*"
   function_url_auth_type = "NONE"
 }
 

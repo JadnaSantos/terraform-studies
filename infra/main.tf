@@ -9,11 +9,11 @@ terraform {
 }
 
 provider "aws" {
-  region  = local.aws_region
+  region = local.aws_region
 
   default_tags {
     tags = {
-      app = local.project_name
+      app         = local.project_name
       environment = local.environment
     }
   }
