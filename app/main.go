@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"os"
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
@@ -22,14 +21,10 @@ type TimeResponse struct {
 func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
 	now := time.Now()
 
-	env := os.Getenv("ENVIRONMENT")
-	region := os.Getenv("AWS_REGION")
-
 	response := TimeResponse{
 		CurrentTime: now.Format("2006-01-02 15:04:05"),
 		Timestamp:   now.Unix(),
-		Timezone:    region,
-		Env:         env,
+		Timezone:    now.Location().String(),
 		Message:     "Hora atual retornada com sucesso!",
 	}
 
