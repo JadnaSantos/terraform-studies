@@ -1,0 +1,130 @@
+name: PIPELINE
+
+on:
+  push:
+    branches: [main, develop]
+
+env:
+  TF_LOG: INFO
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  GOARCH: ${{ secrets.GOARCH }}
+  ZIP_FILE: function.zip
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go 🤲
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: Test 🤘
+        run: go test -v ./...
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go 🤲
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: Build 🏋️
+        run: |
+          cd app
+          GOOS=linux GOARCH=${{ env.GOARCH }} CGO_ENABLED=0 \
+            go build -ldflags="-s -w" -o bootstrap .
+          zip -9 ../${{ env.ZIP_FILE }} bootstrap
+          cd ..
+          ls -lh ${{ env.ZIP_FILE }}
+
+      - name: Upload Artifact 👆
+        uses: actions/upload-artifact@v4
+        with:
+          name: lambda
+          path: ${{ env.ZIP_FILE }}
+          retention-days: 5
+
+  deploy:
+    needs:
+      - build
+      - test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+        working-directory: ./infra
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download lambda.zip 👇
+        uses: actions/download-artifact@v4
+        with:
+          name: lambda
+          path: ./infra
+
+      - name: Setup Terraform 🤲
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.8.5"
+
+      - name: Terraform init 🌛
+        run: terraform init
+
+      - name: Terraform format 💁
+        run: terraform fmt -check
+
+      - name: Terraform Validate 🚦
+        run: terraform validate
+
+      - name: Terraform Plan 🍆
+        id: plan
+        run: terraform plan -input=false
+        continue-on-error: true
+
+      - name: Terraform Plan Status 🚅
+        if: steps.plan.outcome == 'failure'
+        run: exit 1
+
+      - name: Terraform Apply 🍎
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+        run: terraform apply -input=false -auto-approve
+
+  destroy:
+    needs:
+      - deploy
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+    defaults:
+      run:
+        shell: bash
+        working-directory: ./infra
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download lambda.zip 👇
+        uses: actions/download-artifact@v4
+        with:
+          name: lambda
+          path: ./infra
+
+      - name: Setup Terraform 🤲
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.8.5"
+
+      - name: Terraform init 🌛
+        run: terraform init
+
+      - name: Terraform Plan 🍆
+        run: terraform plan -input=false
+        continue-on-error: true
+
+      - name: Terraform Destroy 💣
+        run: terraform destroy -input=false -auto-approve
