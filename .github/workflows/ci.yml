@@ -51,6 +51,7 @@ jobs:
           name: lambda
           path: ${{ env.ZIP_FILE }}
           retention-days: 5
+          if-no-files-found: warn
 
   deploy:
     needs:
