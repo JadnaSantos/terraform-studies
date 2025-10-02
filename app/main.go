@@ -1,41 +1,58 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
-	"fmt"
-	"log"
-	"net/http"
+	"os"
 	"time"
+
+	"github.com/aws/aws-lambda-go/events"
+	"github.com/aws/aws-lambda-go/lambda"
+	"github.com/joho/godotenv"
 )
 
 type TimeResponse struct {
 	CurrentTime string `json:"current_time"`
 	Timestamp   int64  `json:"timestamp"`
 	Timezone    string `json:"timezone"`
+	Message     string `json:"message"`
+	Env         string `json:"env"`
 }
 
-func getCurrentTimeHandler(w http.ResponseWriter, r *http.Request) {
+func handler(ctx context.Context, request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
 	now := time.Now()
+
+	env := os.Getenv("ENVIRONMENT")
+	region := os.Getenv("AWS_REGION")
 
 	response := TimeResponse{
 		CurrentTime: now.Format("2006-01-02 15:04:05"),
 		Timestamp:   now.Unix(),
-		Timezone:    now.Location().String(),
+		Timezone:    region,
+		Env:         env,
+		Message:     "Hora atual retornada com sucesso!",
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	body, err := json.Marshal(response)
+
+	if err != nil {
+		return events.APIGatewayProxyResponse{
+			StatusCode: 500,
+			Body:       `{"error": "Erro ao processar resposta"}`,
+		}, err
+	}
+
+	return events.APIGatewayProxyResponse{
+		StatusCode: 200,
+		Headers: map[string]string{
+			"Content-Type":                "application/json",
+			"Access-Control-Allow-Origin": "*",
+		},
+		Body: string(body),
+	}, nil
 }
 
 func main() {
-	http.HandleFunc("/time", getCurrentTimeHandler)
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(w, "API está rodando! Acesse /time para ver a hora atual")
-	})
-
-	port := ":8080"
-	fmt.Printf("Servidor rodando em http://localhost%s\n", port)
-	fmt.Println("Acesse http://localhost:8080/time para ver a hora atual")
-
-	log.Fatal(http.ListenAndServe(port, nil))
+	godotenv.Load()
+	lambda.Start(handler)
 }
